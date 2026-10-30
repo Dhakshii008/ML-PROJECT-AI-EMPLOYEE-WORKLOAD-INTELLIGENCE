@@ -15,7 +15,16 @@ import {
   ShieldAlert
 } from 'lucide-react';
 
-export default function FloatingNavbar({ activePage, setActivePage, isDark, setIsDark, highRiskCount = 3 }) {
+export default function FloatingNavbar({ 
+  activePage, 
+  setActivePage, 
+  isDark, 
+  setIsDark, 
+  highRiskCount = 3,
+  currentUser = null,
+  onOpenAuth = () => {},
+  onLogout = () => {}
+}) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -89,17 +98,87 @@ export default function FloatingNavbar({ activePage, setActivePage, isDark, setI
           })}
         </div>
 
-        {/* Right Section: AI Status & Theme Toggle */}
-        <div className="flex items-center gap-3">
+        {/* Right Section: AI Status & User Profile & Theme Toggle */}
+        <div className="flex items-center gap-2 md:gap-3">
           
           {/* Animated AI Status */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono shadow-[0_0_12px_rgba(16,185,129,0.15)]">
+          <div className="hidden xl:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono shadow-[0_0_12px_rgba(16,185,129,0.15)]">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="font-semibold tracking-wide">AI SYSTEM ONLINE</span>
+            <span className="font-semibold tracking-wide">AI ONLINE</span>
           </div>
+
+          {/* User Account Capsule / Dropdown */}
+          {currentUser ? (
+            <div className="relative group">
+              <button
+                type="button"
+                className="flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-cyan-500/30 transition-all text-left"
+              >
+                <img
+                  src={currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                  alt={currentUser.name}
+                  className="w-7 h-7 rounded-lg object-cover border border-cyan-400/50"
+                />
+                <div className="hidden sm:block">
+                  <div className="text-[11px] font-semibold text-white leading-tight flex items-center gap-1">
+                    <span>{currentUser.name}</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-cyan-300 leading-none">
+                    {currentUser.company || 'Enterprise'}
+                  </div>
+                </div>
+              </button>
+
+              {/* Dropdown Menu on Hover / Click */}
+              <div className="absolute right-0 top-full mt-2 w-64 p-3 rounded-2xl bg-[#090d1f] border border-cyan-500/30 shadow-2xl backdrop-blur-2xl opacity-0 translate-y-2 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all duration-200 z-50">
+                <div className="flex items-center gap-3 pb-3 mb-2 border-b border-white/10">
+                  <img
+                    src={currentUser.avatar}
+                    alt={currentUser.name}
+                    className="w-10 h-10 rounded-xl object-cover border border-cyan-400"
+                  />
+                  <div className="overflow-hidden">
+                    <div className="text-xs font-bold text-white truncate">{currentUser.name}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{currentUser.email}</div>
+                    <div className="text-[9px] font-mono text-cyan-400 mt-0.5">{currentUser.role}</div>
+                  </div>
+                </div>
+
+                <div className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/5 mb-3">
+                  <div className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Tenant Partition</div>
+                  <div className="text-[11px] font-mono text-cyan-300 font-semibold truncate">
+                    {currentUser.id}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1 text-xs">
+                  <button
+                    onClick={onOpenAuth}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors flex items-center justify-between"
+                  >
+                    <span>Switch / Register Account</span>
+                    <span className="text-[10px] font-mono text-cyan-400">Add +</span>
+                  </button>
+                  <button
+                    onClick={onLogout}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 transition-colors"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-medium text-xs shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all"
+            >
+              Sign In
+            </button>
+          )}
 
           {/* Theme Toggle */}
           <button
@@ -166,6 +245,40 @@ export default function FloatingNavbar({ activePage, setActivePage, isDark, setI
                 </button>
               );
             })}
+
+            {/* Mobile Account Section */}
+            <div className="pt-3 mt-2 border-t border-white/10 px-1">
+              {currentUser ? (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <img src={currentUser.avatar} alt={currentUser.name} className="w-8 h-8 rounded-lg object-cover" />
+                    <div>
+                      <div className="text-xs font-semibold text-white">{currentUser.name}</div>
+                      <div className="text-[10px] text-cyan-400 font-mono">{currentUser.role}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      onLogout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="px-2.5 py-1 text-xs text-rose-400 border border-rose-500/30 rounded-lg hover:bg-rose-500/10"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    onOpenAuth();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full py-2 px-3 text-xs font-semibold rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-white"
+                >
+                  Sign In / Register Account
+                </button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

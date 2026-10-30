@@ -1,36 +1,43 @@
-import { INITIAL_EMPLOYEES, DEPARTMENT_METRICS } from '../data/mockEmployees';
-import { INITIAL_TASKS } from '../data/mockTasks';
+import { dbService } from './dbService';
 import { applyTaskAllocation, matchCandidatesForTask, forecastWorkload, predictWorkloadRisk } from './mlEngine';
 
-// Local in-memory store initialized with rich synthetic data
-let employeesStore = [...INITIAL_EMPLOYEES];
-let tasksStore = [...INITIAL_TASKS];
-
 export const api = {
-  // Fetch all employees
+  // Switch active database tenant partition
+  switchTenant(tenantId) {
+    dbService.switchTenant(tenantId);
+  },
+
+  // Fetch all employees for current authenticated tenant
   async getEmployees() {
     return new Promise(resolve => {
-      setTimeout(() => resolve([...employeesStore]), 150);
+      const employees = dbService.getEmployees();
+      setTimeout(() => resolve([...employees]), 100);
     });
   },
 
-  // Add a newly onboarded employee to store
+  // Add a newly onboarded employee to persistent store
   async addEmployee(newEmployee) {
-    employeesStore.unshift(newEmployee);
+    const saved = dbService.addEmployee(newEmployee);
     return new Promise(resolve => {
-      setTimeout(() => resolve({ success: true, employee: newEmployee }), 100);
+      setTimeout(() => resolve({ success: true, employee: saved }), 80);
     });
   },
 
   // Sync state with external changes
   syncEmployees(updatedList) {
-    employeesStore = [...updatedList];
+    dbService.saveEmployees(updatedList);
+  },
+
+  // Update a single employee
+  updateEmployee(updatedEmployee) {
+    return dbService.updateEmployee(updatedEmployee);
   },
 
   // Fetch single employee with deep analytics
   async getEmployeeById(id) {
     return new Promise((resolve, reject) => {
-      const emp = employeesStore.find(e => e.id === id);
+      const employees = dbService.getEmployees();
+      const emp = employees.find(e => e.id === id);
       if (emp) {
         resolve({ ...emp });
       } else {
@@ -42,51 +49,61 @@ export const api = {
   // Fetch all active tasks
   async getTasks() {
     return new Promise(resolve => {
-      setTimeout(() => resolve([...tasksStore]), 100);
+      const tasks = dbService.getTasks();
+      setTimeout(() => resolve([...tasks]), 80);
     });
   },
 
   // Fetch department flow metrics
   async getDepartmentMetrics() {
     return new Promise(resolve => {
-      resolve([...DEPARTMENT_METRICS]);
+      const metrics = dbService.getDepartmentMetrics();
+      resolve([...metrics]);
     });
   },
 
-  // Execute Task Allocation with ML State Update
+  // Execute Task Allocation with ML State Update & Database Persistence
   async allocateTask(taskId, employeeId) {
     return new Promise((resolve, reject) => {
-      const empIndex = employeesStore.findIndex(e => e.id === employeeId);
-      const taskIndex = tasksStore.findIndex(t => t.id === taskId);
+      const employees = dbService.getEmployees();
+      const tasks = dbService.getTasks();
+
+      const empIndex = employees.findIndex(e => e.id === employeeId);
+      const taskIndex = tasks.findIndex(t => t.id === taskId);
 
       if (empIndex === -1) {
         reject(new Error(`Employee ${employeeId} not found`));
         return;
       }
 
-      const task = tasksStore[taskIndex] || {
+      const task = tasks[taskIndex] || {
         id: taskId || `TSK-${Math.floor(100 + Math.random() * 900)}`,
         name: "Allocated Dynamic Task",
         estimatedHours: 12
       };
 
-      const employee = employeesStore[empIndex];
+      const employee = employees[empIndex];
       const updatedEmployee = applyTaskAllocation(employee, task);
-      employeesStore[empIndex] = updatedEmployee;
+      employees[empIndex] = updatedEmployee;
 
+      // Update task record
       if (taskIndex !== -1) {
-        tasksStore[taskIndex] = {
-          ...tasksStore[taskIndex],
+        tasks[taskIndex] = {
+          ...tasks[taskIndex],
           assignedEmployee: employeeId,
           status: "In Progress"
         };
+        dbService.saveTasks(tasks);
       }
+
+      // Persist updated employee in tenant database
+      dbService.saveEmployees(employees);
 
       setTimeout(() => {
         resolve({
           success: true,
           employee: updatedEmployee,
-          task: tasksStore[taskIndex] || task,
+          task: tasks[taskIndex] || task,
           impact: {
             previousWorkload: employee.currentWorkload,
             newWorkload: updatedEmployee.currentWorkload,
@@ -94,19 +111,20 @@ export const api = {
             riskShift: `${employee.risk} -> ${updatedEmployee.risk}`
           }
         });
-      }, 350);
+      }, 250);
     });
   },
 
   // Find candidate matches using ML
   async findBestMatches(task) {
     return new Promise(resolve => {
-      const matches = matchCandidatesForTask(task, employeesStore);
-      setTimeout(() => resolve(matches), 250);
+      const employees = dbService.getEmployees();
+      const matches = matchCandidatesForTask(task, employees);
+      setTimeout(() => resolve(matches), 150);
     });
   },
 
-  // Create a new task
+  // Create a new task in tenant database
   async createTask(newTask) {
     const task = {
       ...newTask,
@@ -114,25 +132,25 @@ export const api = {
       createdAt: new Date().toISOString().split('T')[0],
       status: "Unassigned"
     };
-    tasksStore.unshift(task);
-    return task;
+    return dbService.addTask(task);
   },
 
   // Pre-generate dynamic AI insights based on live state
   async getAIInsights() {
-    const highRisk = employeesStore.filter(e => e.risk === 'HIGH');
-    const available = employeesStore.filter(e => e.availableCapacity >= 30);
-    const engineering = employeesStore.filter(e => e.department === 'Engineering');
-    const avgEngWorkload = Math.round(
-      engineering.reduce((acc, curr) => acc + curr.currentWorkload, 0) / engineering.length
-    );
+    const employees = dbService.getEmployees();
+    const highRisk = employees.filter(e => e.risk === 'HIGH');
+    const available = employees.filter(e => e.availableCapacity >= 30);
+    const engineering = employees.filter(e => e.department === 'Engineering');
+    const avgEngWorkload = engineering.length > 0
+      ? Math.round(engineering.reduce((acc, curr) => acc + curr.currentWorkload, 0) / engineering.length)
+      : 65;
 
     return [
       {
         id: "ins-1",
         type: "warning",
         category: "HIGH WORKLOAD DETECTED",
-        title: "Engineering Workload Escalation (+14%)",
+        title: `Engineering Workload Escalation (${avgEngWorkload}%)`,
         description: `Average Engineering workload has risen to ${avgEngWorkload}%. ${highRisk.length} staff members are in the critical risk tier, primarily driven by concurrent release deadlines.`,
         actionLabel: "Rebalance Engineering Queue",
         impactScore: "Critical",
@@ -143,7 +161,7 @@ export const api = {
         type: "success",
         category: "CAPACITY AVAILABLE",
         title: `${available.length} Employees with >30% Bandwidth Available`,
-        description: `Substantial talent bandwidth detected in Design (Devon Brooks - 62% capacity) and HR/Operations. Ready for high-priority task dispatch without overtime hazard.`,
+        description: `Substantial talent bandwidth detected in workforce. Ready for high-priority task dispatch without overtime hazard.`,
         actionLabel: "Open Task Allocator",
         impactScore: "Optimal",
         affectedIds: available.map(e => e.id)
@@ -152,22 +170,27 @@ export const api = {
         id: "ins-3",
         type: "predictive",
         category: "PREDICTION ALERT",
-        title: "E104 High-Risk Trajectory Within 7 Days",
-        description: "ML time-series model projects Senior Engineer Alex Rivera (E104) will surpass 94% capacity threshold due to 5 overlapping milestone deadlines.",
-        actionLabel: "Inspect E104 Forecast",
+        title: "Workforce High-Risk Trajectory Within 7 Days",
+        description: "ML time-series model projects workload shifts across pending milestone deadlines.",
+        actionLabel: "Inspect Forecast Telemetry",
         impactScore: "High",
-        affectedIds: ["E104"]
+        affectedIds: highRisk.length > 0 ? [highRisk[0].id] : ["E104"]
       },
       {
         id: "ins-4",
         type: "recommendation",
         category: "STRATEGIC RECOMMENDATION",
-        title: "Redistribute 3 Lower-Priority Sprint Tasks",
-        description: "Reallocating non-critical maintenance tasks from E104 and E112 to E102 and E117 will equalize cross-department workload to safe 64% median.",
+        title: "Redistribute Backlog Sprint Tasks",
+        description: "Reallocating non-critical maintenance tasks to available personnel equalizes cross-department workload to safe median.",
         actionLabel: "Auto-Simulate Redistribution",
         impactScore: "Moderate",
-        affectedIds: ["E104", "E102", "E117"]
+        affectedIds: ["E104", "E102"]
       }
     ];
+  },
+
+  // Reset database partition for current tenant
+  async resetTenantData() {
+    return dbService.resetTenantData();
   }
 };

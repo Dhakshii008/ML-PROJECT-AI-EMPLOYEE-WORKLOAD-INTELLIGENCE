@@ -17,20 +17,40 @@ import WorkloadForecastPage from './pages/WorkloadForecastPage';
 import SmartTaskAllocationPage from './pages/SmartTaskAllocationPage';
 import AIInsightsPage from './pages/AIInsightsPage';
 
-import { INITIAL_EMPLOYEES, DEPARTMENT_METRICS } from './data/mockEmployees';
+import AuthModal from './components/Auth/AuthModal';
+import { authService } from './services/authService';
 import { api } from './services/api';
 import { applyTaskAllocation } from './services/mlEngine';
 
 export default function App() {
   const [activePage, setActivePage] = useState('home');
   const [isDark, setIsDark] = useState(true);
-  const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
-  const [departments, setDepartments] = useState(DEPARTMENT_METRICS);
+  const [currentUser, setCurrentUser] = useState(() => authService.getCurrentUser());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [insights, setInsights] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
   const [activeToast, setActiveToast] = useState(null);
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
   const [createdEmployee, setCreatedEmployee] = useState(null);
+
+  // Sync with auth service and switch tenant partition
+  useEffect(() => {
+    const unsubscribe = authService.subscribe((user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Load tenant data partition whenever active user changes
+  useEffect(() => {
+    const tenantId = currentUser?.id || 'usr_admin_01';
+    api.switchTenant(tenantId);
+    api.getEmployees().then(data => setEmployees(data));
+    api.getDepartmentMetrics().then(dept => setDepartments(dept));
+    api.getAIInsights().then(ins => setInsights(ins));
+  }, [currentUser]);
 
   // Sync theme with HTML class
   useEffect(() => {
@@ -149,6 +169,18 @@ export default function App() {
         isDark={isDark}
         setIsDark={setIsDark}
         highRiskCount={employees.filter(e => e.risk === 'HIGH').length}
+        currentUser={currentUser}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onLogout={() => {
+          authService.logout();
+          setActiveToast({
+            title: "LOGGED OUT",
+            message: "You have signed out. Sign in with another account or create a new workspace.",
+            type: 'warning'
+          });
+          setTimeout(() => setActiveToast(null), 4000);
+          setIsAuthModalOpen(true);
+        }}
       />
 
       {/* Main Page Layout Container */}
@@ -335,6 +367,21 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Production Auth & Multi-Tenant Access Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={(user) => {
+          setCurrentUser(user);
+          setActiveToast({
+            title: "✦ TENANT ACTIVATED",
+            message: `Connected to dedicated partition [${user.id}]. Workspace synchronized.`,
+            type: 'success'
+          });
+          setTimeout(() => setActiveToast(null), 5000);
+        }}
+      />
 
       {/* Mandatory Elegant Footer */}
       <AppFooter />
